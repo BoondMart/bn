@@ -4,7 +4,6 @@ const Poster = require('../model/poster');
 const { uploadPosters } = require('../uploadFile');
 const multer = require('multer');
 const asyncHandler = require('express-async-handler');
-const config = require('../config'); // Same config file as used in other routes
 
 // Helper function to generate full image URL
 const getImageUrl = (filename) => {
