@@ -5,6 +5,14 @@ const multer = require('multer');
 const { uploadProduct } = require('../uploadFile');
 const asyncHandler = require('express-async-handler');
 
+
+const getImageUrl = (filename) => {
+    // Use environment variable or config for base URL
+    const baseUrl = process.env.API_BASE_URL || config.baseUrl || 'http://localhost:3000';
+    return `${baseUrl}/image/products/${filename}`;
+};
+
+
 // Get all products
 router.get('/', asyncHandler(async (req, res) => {
     try {
@@ -90,7 +98,7 @@ router.post('/', asyncHandler(async (req, res) => {
             fields.forEach((field, index) => {
                 if (req.files[field] && req.files[field].length > 0) {
                     const file = req.files[field][0];
-                    const imageUrl = `http://localhost:3000/image/products/${file.filename}`;
+                    const imageUrl = getImageUrl(file.filename);
                     imageUrls.push({ image: index + 1, url: imageUrl });
                 }
             });
@@ -155,7 +163,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
             fields.forEach((field, index) => {
                 if (req.files[field] && req.files[field].length > 0) {
                     const file = req.files[field][0];
-                    const imageUrl = `http://localhost:3000/image/products/${file.filename}`;
+                    const imageUrl = getImageUrl(file.filename);
                     // Update the specific image URL in the images array
                     let imageEntry = productToUpdate.images.find(img => img.image === (index + 1));
                     if (imageEntry) {
