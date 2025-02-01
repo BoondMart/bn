@@ -267,12 +267,30 @@ const orderSchema = new mongoose.Schema({
     state: { type: String, required: true },
     postalCode: { type: String, required: true },
     country: { type: String, required: true },
-  },
-  paymentMethod: {
+  },  paymentStatus: {
     type: String,
-    enum: ["cod", "prepaid"],
-    required: true,
+    enum: ['pending', 'completed', 'failed', 'refunded'],
+    default: 'pending'
   },
+  paymentId: {
+    type: String
+  },
+  paymentSignature: {
+    type: String
+  },
+  paymentDetails: {
+    method: String,
+    transactionId: String,
+    amount: Number,
+    currency: {
+      type: String,
+      default: 'INR'
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now
+    }
+  }
   couponCode: { type: mongoose.Schema.Types.ObjectId, ref: "Coupon" },
   orderTotal: {
     subtotal: { type: Number, required: true },
