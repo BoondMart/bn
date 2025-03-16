@@ -1,4 +1,5 @@
-
+const rateLimit = require('express-rate-limit');
+const mongoose = require('mongoose');
 const express = require('express');
 const asyncHandler = require('express-async-handler');
 const router = express.Router();
@@ -6,13 +7,13 @@ const User = require('../model/user');
 const jwt = require('jsonwebtoken');
 const admin = require('../utils/firebase_config');
 const bcrypt = require('bcryptjs');
-
+const { v4: uuidv4 } = require('uuid');
+const axios = require('axios');
 // Add these imports for S3 functionality
 const multer = require('multer');
 const multerS3 = require('multer-s3');
 const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
 
 // Initialize AWS S3 client
 const s3 = new S3Client({
