@@ -200,7 +200,7 @@ const mongoose = require('mongoose');
 const asyncHandler = require('express-async-handler');
 const dotenv = require('dotenv');
 dotenv.config();
-
+const axios = require('axios');
 // S3 configuration imports
 const { S3Client } = require('@aws-sdk/client-s3');
 
