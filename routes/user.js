@@ -1,116 +1,4 @@
-// const express = require('express');
-// const asyncHandler = require('express-async-handler');
-// const router = express.Router();
-// const User = require('../model/user');
 
-// // Get all users
-// router.get('/', asyncHandler(async (req, res) => {
-//     try {
-//         const users = await User.find();
-//         res.json({ success: true, message: "Users retrieved successfully.", data: users });
-//     } catch (error) {
-//         res.status(500).json({ success: false, message: error.message });
-//     }
-// }));
-
-// // login
-// router.post('/login', async (req, res) => {
-//     const { name, password } = req.body;
-
-//     try {
-//         // Check if the user exists
-//         const user = await User.findOne({ name });
-
-
-//         if (!user) {
-//             return res.status(401).json({ success: false, message: "Invalid name or password." });
-//         }
-//         // Check if the password is correct
-//         if (user.password !== password) {
-//             return res.status(401).json({ success: false, message: "Invalid name or password." });
-//         }
-
-//         // Authentication successful
-//         res.status(200).json({ success: true, message: "Login successful.",data: user });
-//     } catch (error) {
-//         res.status(500).json({ success: false, message: error.message });
-//     }
-// });
-
-
-// // Get a user by ID
-// router.get('/:id', asyncHandler(async (req, res) => {
-//     try {
-//         const userID = req.params.id;
-//         const user = await User.findById(userID);
-//         if (!user) {
-//             return res.status(404).json({ success: false, message: "User not found." });
-//         }
-//         res.json({ success: true, message: "User retrieved successfully.", data: user });
-//     } catch (error) {
-//         res.status(500).json({ success: false, message: error.message });
-//     }
-// }));
-
-// // Create a new user
-// router.post('/register', asyncHandler(async (req, res) => {
-//     const { name, password } = req.body;
-//     if (!name || !password) {
-//         return res.status(400).json({ success: false, message: "Name, and password are required." });
-//     }
-
-//     try {
-//         const user = new User({ name, password });
-//         const newUser = await user.save();
-//         res.json({ success: true, message: "User created successfully.", data: newUser });
-//     } catch (error) {
-//         res.status(500).json({ success: false, message: error.message });
-//     }
-// }));
-
-// // Update a user
-// router.put('/:id', asyncHandler(async (req, res) => {
-//     try {
-//         const userID = req.params.id;
-//         const { name, password } = req.body;
-//         if (!name || !password) {
-//             return res.status(400).json({ success: false, message: "Name,  and password are required." });
-//         }
-
-//         const updatedUser = await User.findByIdAndUpdate(
-//             userID,
-//             { name, password },
-//             { new: true }
-//         );
-
-//         if (!updatedUser) {
-//             return res.status(404).json({ success: false, message: "User not found." });
-//         }
-
-//         res.json({ success: true, message: "User updated successfully.", data: updatedUser });
-//     } catch (error) {
-//         res.status(500).json({ success: false, message: error.message });
-//     }
-// }));
-
-// // Delete a user
-// router.delete('/:id', asyncHandler(async (req, res) => {
-//     try {
-//         const userID = req.params.id;
-//         const deletedUser = await User.findByIdAndDelete(userID);
-//         if (!deletedUser) {
-//             return res.status(404).json({ success: false, message: "User not found." });
-//         }
-//         res.json({ success: true, message: "User deleted successfully." });
-//     } catch (error) {
-//         res.status(500).json({ success: false, message: error.message });
-//     }
-// }));
-
-// module.exports = router;
-
-const rateLimit = require('express-rate-limit');
-const mongoose = require('mongoose');
 const express = require('express');
 const asyncHandler = require('express-async-handler');
 const router = express.Router();
@@ -118,13 +6,13 @@ const User = require('../model/user');
 const jwt = require('jsonwebtoken');
 const admin = require('../utils/firebase_config');
 const bcrypt = require('bcryptjs');
-const { v4: uuidv4 } = require('uuid');
-const axios = require('axios');
+
 // Add these imports for S3 functionality
 const multer = require('multer');
 const multerS3 = require('multer-s3');
 const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
 // Initialize AWS S3 client
 const s3 = new S3Client({
@@ -135,12 +23,12 @@ const s3 = new S3Client({
   },
 });
 
-// Configure multer for S3 storage
+// Configure multer for S3 storage - fixed configuration
 const upload = multer({
   storage: multerS3({
     s3: s3,
-    bucket: process.env.AWS_S3_BUCKET || 'your-bucket-name',
-    acl: 'public-read',
+    bucket: process.env.AWS_S3_BUCKET_NAME || 'boondmart', // Match env variable name
+    // Remove the acl: 'public-read' line
     contentType: multerS3.AUTO_CONTENT_TYPE,
     metadata: (req, file, cb) => {
       cb(null, { fieldName: file.fieldname });
@@ -154,28 +42,49 @@ const upload = multer({
     fileSize: 5 * 1024 * 1024, // 5MB limit
   },
   fileFilter: (req, file, cb) => {
-    // Accept images only
-    if (!file.originalname.match(/\.(jpg|jpeg|png|gif)$/i)) {
-      return cb(new Error('Only image files are allowed!'), false);
+    // More permissive file validation
+    const filetypes = /jpeg|jpg|png|gif/i;
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+
+    console.log(`User Profile Image: ${file.originalname}, Ext: ${path.extname(file.originalname).toLowerCase()}, MimeType: ${file.mimetype}`);
+
+    // Only check extension to be more permissive with MIME types
+    if (extname) {
+      return cb(null, true);
     }
-    cb(null, true);
+
+    console.log(`File rejected: ${file.originalname}`);
+    cb(new Error('Only image files are allowed!'), false);
   },
 });
 
-// Helper function to get S3 URL
+// Helper function to get S3 URL - improved version
 const getS3Url = (objectKey) => {
+  // If objectKey is null/undefined, return a placeholder URL or null
   if (!objectKey) return null;
 
-  // If objectKey already contains the full URL, return it as is
-  if (objectKey.startsWith('http')) return objectKey;
+  // If using S3 storage
+  if (process.env.USE_S3_STORAGE === 'true') {
+    const bucket = process.env.AWS_S3_BUCKET_NAME || 'boondmart';
+    const region = process.env.AWS_REGION || 'us-east-1';
 
-  const bucket = process.env.AWS_S3_BUCKET || 'your-bucket-name';
-  const region = process.env.AWS_REGION || 'us-east-1';
+    // If objectKey already contains the full URL, return it as is
+    if (objectKey.startsWith('http')) return objectKey;
 
-  return `https://${bucket}.s3.${region}.amazonaws.com/${objectKey}`;
+    // Check if objectKey already includes the path
+    if (objectKey.includes('/')) {
+      return `https://${bucket}.s3.${region}.amazonaws.com/${objectKey}`;
+    } else {
+      return `https://${bucket}.s3.${region}.amazonaws.com/uploads/profiles/${objectKey}`;
+    }
+  } else {
+    // Local storage path
+    const baseUrl = process.env.API_BASE_URL || 'http://localhost:4000';
+    return `${baseUrl}/uploads/profiles/${objectKey}`;
+  }
 };
 
-// Helper function to delete file from S3
+// Helper function to delete file from S3 - updated bucket name
 const deleteS3File = async (objectKey) => {
   if (!objectKey) return;
 
@@ -192,7 +101,7 @@ const deleteS3File = async (objectKey) => {
 
   try {
     const deleteParams = {
-      Bucket: process.env.AWS_S3_BUCKET || 'your-bucket-name',
+      Bucket: process.env.AWS_S3_BUCKET_NAME || 'boondmart',
       Key: objectKey,
     };
 
@@ -202,6 +111,7 @@ const deleteS3File = async (objectKey) => {
     console.error(`Error deleting file from S3: ${objectKey}`, error);
   }
 };
+
 
 // Update the profile route to use S3
 router.put(
@@ -232,23 +142,32 @@ router.put(
       };
 
       // Handle image upload if present
-      if (req.file) {
-        try {
-          // Store the S3 object key
-          updates.image = req.file.key || req.file.location;
+// Handle image upload if present
+if (req.file) {
+  try {
+    // Get the S3 key
+    const s3Key = req.file.key || req.file.location;
 
-          // Delete old image from S3 if it exists
-          if (oldImage && oldImage.trim() !== '') {
-            await deleteS3File(oldImage);
-          }
-        } catch (error) {
-          console.error('Error processing image:', error);
-          throw error;
-        }
-      }
+    console.log('Profile Image Upload:', {
+      originalName: req.file.originalname,
+      s3Key: s3Key,
+      size: req.file.size
+    });
 
+    // Store the S3 object key
+    updates.image = s3Key;
+
+    // Delete old image from S3 if it exists
+    if (oldImage && oldImage.trim() !== '') {
+      await deleteS3File(oldImage);
+    }
+  } catch (error) {
+    console.error('Error processing image:', error);
+    throw error;
+  }
+}
       // Remove undefined fields
-      Object.keys(updates).forEach(key => 
+      Object.keys(updates).forEach(key =>
         updates[key] === undefined && delete updates[key]
       );
 
@@ -316,9 +235,9 @@ router.post('/login', asyncHandler(async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-        return res.status(400).json({ 
-            success: false, 
-            message: "Email and password are required." 
+        return res.status(400).json({
+            success: false,
+            message: "Email and password are required."
         });
     }
 
@@ -326,18 +245,18 @@ router.post('/login', asyncHandler(async (req, res) => {
     const user = await User.findOne({ email }).select('+password');
 
     if (!user) {
-        return res.status(401).json({ 
-            success: false, 
-            message: "Invalid email or password." 
+        return res.status(401).json({
+            success: false,
+            message: "Invalid email or password."
         });
     }
 
     // Use the comparePassword method we defined in the schema
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
-        return res.status(401).json({ 
-            success: false, 
-            message: "Invalid email or password." 
+        return res.status(401).json({
+            success: false,
+            message: "Invalid email or password."
         });
     }
 
@@ -375,16 +294,17 @@ router.get('/:id', asyncHandler(async (req, res) => {
       });
 
   if (!user) {
-      return res.status(404).json({ 
-          success: false, 
-          message: "User not found." 
+      return res.status(404).json({
+          success: false,
+          message: "User not found."
       });
   }
 
   // Transform the image path if it exists
-  if (user.image) {
-    user.image = user.image?.startsWith('/') ? user.image : `/${user.image}`;
-  }
+// Transform the image path if it exists
+if (user.image) {
+  user.image = getS3Url(user.image);
+}
 console.log(user.image);
   // Format the response to match your structure
   const formattedUser = {
@@ -414,10 +334,10 @@ console.log(user.image);
         image: user.image // Using the correct field name
   };
 
-  res.json({ 
-      success: true, 
-      message: "User retrieved successfully.", 
-      data: formattedUser 
+  res.json({
+      success: true,
+      message: "User retrieved successfully.",
+      data: formattedUser
   });
 }));
 
@@ -425,9 +345,9 @@ console.log(user.image);
 router.get('/address/:userId', async (req, res) => {
   try {
       console.log("Fetching addresses for user:", req.params.userId);
-      
+
       const user = await User.findById(req.params.userId);
-      
+
       if (!user) {
           return res.status(404).json({
               success: false,
@@ -453,9 +373,9 @@ router.get('/address/:userId', async (req, res) => {
 
 router.post('/register', async (req, res) => {
   console.log('Received registration data:', req.body);
-  
+
   let firebaseUser = null;
-  
+
   try {
       const { fullName, email, phone, password, addresses } = req.body;
 
@@ -591,12 +511,12 @@ router.post('/register', async (req, res) => {
 // router.post('/register', async (req, res) => {
 //     console.log('Received registration data:', req.body);
 //     console.log('Addresses:', req.body.addresses);
- 
+
 //     let firebaseUser = null;
-    
+
 //     try {
 //       const { fullName, email, phone, password, addresses } = req.body;  // Changed from address to addresses
-  
+
 //       // Validate addresses array
 //       if (!addresses || !addresses.length) {
 //         return res.status(400).json({
@@ -604,7 +524,7 @@ router.post('/register', async (req, res) => {
 //           message: "Address is required"
 //         });
 //       }
-  
+
 //       // 1. Check for existing user
 //       try {
 //         const existingFirebaseUser = await admin.auth().getUserByEmail(email);
@@ -617,7 +537,7 @@ router.post('/register', async (req, res) => {
 //       } catch (e) {
 //         // Firebase user not found, continue registration
 //       }
-  
+
 //       // 2. Create Firebase user
 //       firebaseUser = await admin.auth().createUser({
 //         email,
@@ -625,7 +545,7 @@ router.post('/register', async (req, res) => {
 //         displayName: fullName,
 //         phoneNumber: phone
 //       });
-  
+
 //       // 3. Create user in database
 //       const user = new User({
 //         _id: firebaseUser.uid,
@@ -636,12 +556,12 @@ router.post('/register', async (req, res) => {
 //         addresses: addresses,  // Use the addresses array directly
 //         createdAt: new Date()
 //       });
-  
+
 //       await user.save();
-  
+
 //       // 4. Generate custom token
 //       const token = await admin.auth().createCustomToken(firebaseUser.uid);
-  
+
 //       // 5. Send success response
 //       res.status(201).json({
 //         success: true,
@@ -657,10 +577,10 @@ router.post('/register', async (req, res) => {
 //           token
 //         }
 //       });
-  
+
 //     } catch (error) {
 //       console.error('Registration error:', error);
-  
+
 //       // Cleanup on error
 //       if (firebaseUser) {
 //         try {
@@ -669,7 +589,7 @@ router.post('/register', async (req, res) => {
 //           console.error('Cleanup error:', cleanupError);
 //         }
 //       }
-  
+
 //       // Send appropriate error response
 //       if (error.code === 'auth/email-already-exists') {
 //         res.status(409).json({
@@ -690,6 +610,49 @@ router.post('/register', async (req, res) => {
 //       }
 //     }
 // });
+
+
+
+let otpStorage = {}; // Temporary in-memory storage for OTPs
+
+// Generate OTP
+function generateOtp() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// API to send OTP
+router.post('/send-otp', (req, res) => {
+  const { phoneNumber } = req.body;
+
+  if (!phoneNumber) {
+    return res.status(400).json({ message: 'Phone number is required' });
+  }
+
+  const otp = generateOtp();
+  otpStorage[phoneNumber] = otp; // Store OTP against the phone number
+
+  // Simulate sending OTP via SMS (In reality, use an SMS service)
+  console.log(`OTP for ${phoneNumber}: ${otp}`);
+
+  res.status(200).json({ message: 'OTP sent successfully' });
+});
+
+// API to verify OTP
+router.post('/verify-otp', (req, res) => {
+  const { phoneNumber, otp } = req.body;
+
+  if (!phoneNumber || !otp) {
+    return res.status(400).json({ message: 'Phone number and OTP are required' });
+  }
+
+  if (otpStorage[phoneNumber] === otp) {
+    delete otpStorage[phoneNumber]; // Clear OTP once verified
+    res.status(200).json({ message: 'OTP verified successfully' });
+  } else {
+    res.status(400).json({ message: 'Invalid OTP' });
+  }
+});
+
 
 
 
@@ -716,8 +679,8 @@ router.get('/check-phone/:phoneNumber', async (req, res) => {
     return res.status(200).json({
       success: true,
       exists: !!existingUser,
-      message: existingUser 
-        ? 'Phone number already exists' 
+      message: existingUser
+        ? 'Phone number already exists'
         : 'Phone number is available'
     });
 
@@ -749,8 +712,8 @@ router.post('/check-phone', async (req, res) => {
     return res.status(200).json({
       success: true,
       exists: !!existingUser,
-      message: existingUser 
-        ? 'Phone number already exists' 
+      message: existingUser
+        ? 'Phone number already exists'
         : 'Phone number is available'
     });
 
@@ -782,8 +745,8 @@ router.post('/check-email', async (req, res) => {
     return res.status(200).json({
       success: true,
       exists: !!existingUser,
-      message: existingUser 
-        ? 'Phone number already exists' 
+      message: existingUser
+        ? 'Phone number already exists'
         : 'Phone number is available'
     });
 
@@ -835,7 +798,7 @@ router.post('/reset-password', async (req, res) => {
           const salt = await bcrypt.genSalt(10);
           const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-          await User.findByIdAndUpdate(user._id, { 
+          await User.findByIdAndUpdate(user._id, {
               $set: { password: hashedPassword }
           });
           console.log('MongoDB password updated successfully');
@@ -846,7 +809,7 @@ router.post('/reset-password', async (req, res) => {
           });
       } catch (firebaseError) {
           console.error('Firebase update error:', firebaseError);
-          
+
           // If Firebase update fails, send specific error message
           if (firebaseError.code === 'auth/user-not-found') {
               return res.status(404).json({
@@ -860,10 +823,10 @@ router.post('/reset-password', async (req, res) => {
 
   } catch (error) {
       console.error('Reset password error:', error);
-      
+
       // Rollback MongoDB password if necessary
       // (You might want to add this if needed)
-      
+
       return res.status(500).json({
           success: false,
           message: 'Failed to reset password',
@@ -970,13 +933,13 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 router.put('/address/:userId', asyncHandler(async (req, res) => {
   try {
       const userId = req.params.userId;
-      const { 
-          houseNumber, 
-          floor, 
-          area, 
+      const {
+          houseNumber,
+          floor,
+          area,
           landmark,
           location,
-          isDefault 
+          isDefault
       } = req.body;
 
       // Validate required fields
@@ -1016,54 +979,45 @@ router.put('/address/:userId', asyncHandler(async (req, res) => {
       }
 
       user.addresses.push(newAddress);
-      
+
       // Save to MongoDB
       const updatedUser = await user.save();
 
-      // Determine if this is a JWT auth request or Firebase auth request
-      const authHeader = req.headers['authorization'];
-      const isJwtAuth = authHeader && authHeader.startsWith('Bearer ') && !authHeader.includes('Firebase');
-      
-      // Only try to update Firebase if not using JWT
-      if (!isJwtAuth) {
-          try {
-              // Check if user exists in Firebase before trying to update
-              const firebaseUser = await admin.auth().getUser(userId).catch(e => null);
-              
-              if (firebaseUser) {
-                  // Format addresses properly for Firebase
-                  const customClaims = {
-                      addresses: updatedUser.addresses.map(addr => ({
-                          houseNumber: addr.houseNumber || '',
-                          floor: addr.floor || '',
-                          area: addr.area || '',
-                          landmark: addr.landmark || '',
-                          location: {
-                              latitude: addr.location?.latitude || 0,
-                              longitude: addr.location?.longitude || 0
-                          },
-                          isDefault: Boolean(addr.isDefault),
-                          _id: addr._id ? addr._id.toString() : null
-                      }))
-                  };
+      // Update in Firebase
+      try {
+          await admin.auth().getUser(userId); // Verify user exists in Firebase
 
-                  await admin.auth().setCustomUserClaims(userId, customClaims);
+          // Update custom claims with new address
+          const customClaims = {
+              addresses: updatedUser.addresses.map(addr => ({
+                  houseNumber: addr.houseNumber,
+                  floor: addr.floor,
+                  area: addr.area,
+                  landmark: addr.landmark,
+                  location: addr.location,
+                  isDefault: addr.isDefault,
+                  _id: addr._id.toString()
+              }))
+          };
+
+          await admin.auth().setCustomUserClaims(userId, customClaims);
+
+          res.status(200).json({
+              success: true,
+              message: "Address updated successfully in both MongoDB and Firebase",
+              data: {
+                  user: updatedUser,
+                  addresses: updatedUser.addresses
               }
-          } catch (firebaseError) {
-              console.warn(`Firebase update skipped: ${firebaseError.message}`);
-              // Important: Don't throw an error here, just log it and continue
-          }
-      }
+          });
 
-      // Return success even if Firebase update failed
-      res.status(200).json({
-          success: true,
-          message: "Address updated successfully",
-          data: {
-              user: updatedUser,
-              addresses: updatedUser.addresses
-          }
-      });
+      } catch (firebaseError) {
+          // If Firebase update fails, rollback MongoDB changes
+          user.addresses.pop(); // Remove the last added address
+          await user.save();
+
+          throw new Error(`Firebase update failed: ${firebaseError.message}`);
+      }
 
   } catch (error) {
       console.error('Error updating address:', error);
@@ -1074,6 +1028,7 @@ router.put('/address/:userId', asyncHandler(async (req, res) => {
       });
   }
 }));
+
 // Delete address
 router.delete('/address/:userId/:addressId', asyncHandler(async (req, res) => {
   try {
@@ -1106,7 +1061,7 @@ router.delete('/address/:userId/:addressId', asyncHandler(async (req, res) => {
       // Update Firebase
       try {
           await admin.auth().getUser(userId);
-          
+
           const customClaims = {
               addresses: updatedUser.addresses.map(addr => ({
                   houseNumber: addr.houseNumber,
@@ -1147,16 +1102,6 @@ router.delete('/address/:userId/:addressId', asyncHandler(async (req, res) => {
       });
   }
 }));
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1350,10 +1295,6 @@ router.get('/api/user/profile', authenticateToken, async (req, res) => {
     });
   }
 });
-
-
-
-
 
 
 
