@@ -109,7 +109,8 @@
 
 // module.exports = router;
 
-
+const rateLimit = require('express-rate-limit');
+const mongoose = require('mongoose');
 const express = require('express');
 const asyncHandler = require('express-async-handler');
 const router = express.Router();
@@ -117,13 +118,13 @@ const User = require('../model/user');
 const jwt = require('jsonwebtoken');
 const admin = require('../utils/firebase_config');
 const bcrypt = require('bcryptjs');
-
+const { v4: uuidv4 } = require('uuid');
+const axios = require('axios');
 // Add these imports for S3 functionality
 const multer = require('multer');
 const multerS3 = require('multer-s3');
 const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
 
 // Initialize AWS S3 client
 const s3 = new S3Client({
@@ -692,49 +693,6 @@ router.post('/register', async (req, res) => {
 
 
 
-let otpStorage = {}; // Temporary in-memory storage for OTPs
-
-// Generate OTP
-function generateOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-}
-
-// API to send OTP
-router.post('/send-otp', (req, res) => {
-  const { phoneNumber } = req.body;
-
-  if (!phoneNumber) {
-    return res.status(400).json({ message: 'Phone number is required' });
-  }
-
-  const otp = generateOtp();
-  otpStorage[phoneNumber] = otp; // Store OTP against the phone number
-
-  // Simulate sending OTP via SMS (In reality, use an SMS service)
-  console.log(`OTP for ${phoneNumber}: ${otp}`);
-
-  res.status(200).json({ message: 'OTP sent successfully' });
-});
-
-// API to verify OTP
-router.post('/verify-otp', (req, res) => {
-  const { phoneNumber, otp } = req.body;
-
-  if (!phoneNumber || !otp) {
-    return res.status(400).json({ message: 'Phone number and OTP are required' });
-  }
-
-  if (otpStorage[phoneNumber] === otp) {
-    delete otpStorage[phoneNumber]; // Clear OTP once verified
-    res.status(200).json({ message: 'OTP verified successfully' });
-  } else {
-    res.status(400).json({ message: 'Invalid OTP' });
-  }
-});
-
-
-
-
 
 
 
@@ -1062,41 +1020,50 @@ router.put('/address/:userId', asyncHandler(async (req, res) => {
       // Save to MongoDB
       const updatedUser = await user.save();
 
-      // Update in Firebase
-      try {
-          await admin.auth().getUser(userId); // Verify user exists in Firebase
-          
-          // Update custom claims with new address
-          const customClaims = {
-              addresses: updatedUser.addresses.map(addr => ({
-                  houseNumber: addr.houseNumber,
-                  floor: addr.floor,
-                  area: addr.area,
-                  landmark: addr.landmark,
-                  location: addr.location,
-                  isDefault: addr.isDefault,
-                  _id: addr._id.toString()
-              }))
-          };
+      // Determine if this is a JWT auth request or Firebase auth request
+      const authHeader = req.headers['authorization'];
+      const isJwtAuth = authHeader && authHeader.startsWith('Bearer ') && !authHeader.includes('Firebase');
+      
+      // Only try to update Firebase if not using JWT
+      if (!isJwtAuth) {
+          try {
+              // Check if user exists in Firebase before trying to update
+              const firebaseUser = await admin.auth().getUser(userId).catch(e => null);
+              
+              if (firebaseUser) {
+                  // Format addresses properly for Firebase
+                  const customClaims = {
+                      addresses: updatedUser.addresses.map(addr => ({
+                          houseNumber: addr.houseNumber || '',
+                          floor: addr.floor || '',
+                          area: addr.area || '',
+                          landmark: addr.landmark || '',
+                          location: {
+                              latitude: addr.location?.latitude || 0,
+                              longitude: addr.location?.longitude || 0
+                          },
+                          isDefault: Boolean(addr.isDefault),
+                          _id: addr._id ? addr._id.toString() : null
+                      }))
+                  };
 
-          await admin.auth().setCustomUserClaims(userId, customClaims);
-
-          res.status(200).json({
-              success: true,
-              message: "Address updated successfully in both MongoDB and Firebase",
-              data: {
-                  user: updatedUser,
-                  addresses: updatedUser.addresses
+                  await admin.auth().setCustomUserClaims(userId, customClaims);
               }
-          });
-
-      } catch (firebaseError) {
-          // If Firebase update fails, rollback MongoDB changes
-          user.addresses.pop(); // Remove the last added address
-          await user.save();
-
-          throw new Error(`Firebase update failed: ${firebaseError.message}`);
+          } catch (firebaseError) {
+              console.warn(`Firebase update skipped: ${firebaseError.message}`);
+              // Important: Don't throw an error here, just log it and continue
+          }
       }
+
+      // Return success even if Firebase update failed
+      res.status(200).json({
+          success: true,
+          message: "Address updated successfully",
+          data: {
+              user: updatedUser,
+              addresses: updatedUser.addresses
+          }
+      });
 
   } catch (error) {
       console.error('Error updating address:', error);
@@ -1107,7 +1074,6 @@ router.put('/address/:userId', asyncHandler(async (req, res) => {
       });
   }
 }));
-
 // Delete address
 router.delete('/address/:userId/:addressId', asyncHandler(async (req, res) => {
   try {
@@ -1181,6 +1147,216 @@ router.delete('/address/:userId/:addressId', asyncHandler(async (req, res) => {
       });
   }
 }));
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Your JWT secret key (use environment variables in production)
+const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
+
+// Your 2Factor.in API key
+const API_KEY = process.env.TWOFACTOR_API_KEY || 'your_2factor_api_key';
+
+// Route to check if phone is registered and send OTP
+router.post('/api/auth/send-otp', async (req, res) => {
+  try {
+    const { phoneNumber } = req.body;
+    
+    // Check if the phone number is registered
+    const user = await User.findOne({ phone: phoneNumber });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Phone number is not registered'
+      });
+    }
+    
+    // If user exists but is inactive or suspended
+    if (user.status !== 'active') {
+      return res.status(403).json({
+        success: false,
+        message: `Your account is ${user.status}. Please contact support.`
+      });
+    }
+    
+    // If user is found and active, proceed to send OTP via 2Factor.in
+    const response = await axios.get(
+      `https://2factor.in/API/V1/${API_KEY}/SMS/${phoneNumber}/AUTOGEN`
+    );
+    
+    if (response.data.Status === 'Success') {
+      // Return success response with session ID
+      res.json({
+        success: true,
+        message: 'OTP sent successfully',
+        sessionId: response.data.Details,
+        userId: user._id
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Failed to send OTP'
+      });
+    }
+  } catch (error) {
+    console.error('Error sending OTP:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while sending OTP'
+    });
+  }
+});
+
+// Route to verify OTP and generate JWT
+router.post('/api/auth/verify-otp', async (req, res) => {
+  try {
+    const { sessionId, otp, userId } = req.body;
+    console.log('Verifying OTP:', { sessionId, otp, userId });
+    
+    // Call 2Factor.in API to verify OTP
+    try {
+      const response = await axios.get(
+        `https://2factor.in/API/V1/${API_KEY}/SMS/VERIFY/${sessionId}/${otp}`
+      );
+      
+      console.log('2Factor response:', response.data);
+      
+      if (response.data.Status === 'Success') {
+        console.log('OTP verification successful');
+        
+        // Fetch user from database with full details
+        const user = await User.findById(userId).select('-password');
+        
+        if (!user) {
+          console.log('User not found:', userId);
+          return res.status(404).json({
+            success: false,
+            message: 'User not found'
+          });
+        }
+        
+        console.log('User found:', user._id);
+        
+        // Generate JWT token with comprehensive user data
+        const token = jwt.sign(
+          { 
+            userId: user._id,
+            email: user.email,
+            phone: user.phone,
+            fullName: user.fullName,
+            image: user.image,
+            // Include other important user data as needed
+          },
+          JWT_SECRET,
+          { expiresIn: '7d' } // Token valid for 7 days
+        );
+        
+        console.log('JWT generated successfully');
+        
+        // Return token and user data to client
+        res.json({
+          success: true,
+          message: 'Login successful',
+          token: token,  // This field name must match what the client expects
+          user: {
+            id: user._id,
+            fullName: user.fullName,
+            email: user.email,
+            phone: user.phone,
+            image: user.image
+            // Include other basic user fields as needed
+          }
+        });
+      } else {
+        // OTP verification failed but API returned a 200 response
+        console.log('OTP verification failed:', response.data);
+        res.status(400).json({
+          success: false,
+          message: response.data.Details || 'Invalid OTP'
+        });
+      }
+    } catch (apiError) {
+      // Handle 2Factor.in API errors
+      console.error('2Factor API error:', apiError.response?.data || apiError.message);
+      
+      // Get the error details from the 2Factor response if available
+      const errorDetails = apiError.response?.data?.Details || 'Invalid OTP';
+      
+      // Send a properly formatted error response to the client
+      return res.status(400).json({
+        success: false,
+        message: errorDetails
+      });
+    }
+  } catch (error) {
+    console.error('Error verifying OTP:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while verifying OTP'
+    });
+  }
+});
+
+// Middleware for token verification in your Node.js backend
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  
+  if (!token) return res.status(401).json({ success: false, message: 'No token provided' });
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded; // This makes the token data available to route handlers
+    next();
+  } catch (error) {
+    return res.status(403).json({ success: false, message: 'Invalid token' });
+  }
+}
+
+// Get user profile (protected route)
+router.get('/api/user/profile', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId)
+      .select('-password');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      user
+    });
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+
+
+
+
+
+
 
 
 
