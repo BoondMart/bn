@@ -14,7 +14,6 @@ const multer = require('multer');
 const multerS3 = require('multer-s3');
 const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const path = require('path');
-
 // Initialize AWS S3 client
 const s3 = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
