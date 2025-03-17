@@ -27,7 +27,7 @@ const s3 = new S3Client({
 const upload = multer({
   storage: multerS3({
     s3: s3,
-    bucket: process.env.AWS_S3_BUCKET_NAME || 'boondmart', // Match env variable name
+    bucket: process.env.AWS_S3_BUCKET || 'boondmart', // Match env variable name
     // Remove the acl: 'public-read' line
     contentType: multerS3.AUTO_CONTENT_TYPE,
     metadata: (req, file, cb) => {
@@ -89,7 +89,7 @@ const getImageUrl = (objectKey) => {
 
   // If using S3 storage
   if (process.env.USE_S3_STORAGE === 'true') {
-    const bucket = process.env.AWS_S3_BUCKET_NAME || 'boondmart';
+    const bucket = process.env.AWS_S3_BUCKET || 'boondmart';
     const region = process.env.AWS_REGION || 'us-east-1';
 
     // If objectKey already contains the full URL, return it as is
@@ -125,7 +125,7 @@ const deleteS3File = async (objectKey) => {
 
   try {
     const deleteParams = {
-      Bucket: process.env.AWS_S3_BUCKET_NAME || 'boondmart',
+      Bucket: process.env.AWS_S3_BUCKET || 'boondmart',
       Key: objectKey,
     };
 
