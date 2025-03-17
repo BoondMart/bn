@@ -59,8 +59,32 @@ const upload = multer({
 });
 
 // Helper function to get S3 URL - improved version
-const getS3Url = (objectKey) => {
-  // If objectKey is null/undefined, return a placeholder URL or null
+// const getS3Url = (objectKey) => {
+//   // If objectKey is null/undefined, return a placeholder URL or null
+//   if (!objectKey) return null;
+
+//   // If using S3 storage
+//   if (process.env.USE_S3_STORAGE === 'true') {
+//     const bucket = process.env.AWS_S3_BUCKET_NAME || 'boondmart';
+//     const region = process.env.AWS_REGION || 'us-east-1';
+
+//     // If objectKey already contains the full URL, return it as is
+//     if (objectKey.startsWith('http')) return objectKey;
+
+//     // Check if objectKey already includes the path
+//     if (objectKey.includes('/')) {
+//       return `https://${bucket}.s3.${region}.amazonaws.com/${objectKey}`;
+//     } else {
+//       return `https://${bucket}.s3.${region}.amazonaws.com/uploads/profiles/${objectKey}`;
+//     }
+//   } else {
+//     // Local storage path
+//     const baseUrl = process.env.API_BASE_URL || 'http://localhost:4000';
+//     return `${baseUrl}/uploads/profiles/${objectKey}`;
+//   }
+// };
+// Update getImageUrl function to match your user router's approach
+const getImageUrl = (objectKey) => {
   if (!objectKey) return null;
 
   // If using S3 storage
@@ -75,12 +99,12 @@ const getS3Url = (objectKey) => {
     if (objectKey.includes('/')) {
       return `https://${bucket}.s3.${region}.amazonaws.com/${objectKey}`;
     } else {
-      return `https://${bucket}.s3.${region}.amazonaws.com/uploads/profiles/${objectKey}`;
+      return `https://${bucket}.s3.${region}.amazonaws.com/uploads/products/${objectKey}`;
     }
   } else {
     // Local storage path
     const baseUrl = process.env.API_BASE_URL || 'http://localhost:4000';
-    return `${baseUrl}/uploads/profiles/${objectKey}`;
+    return `${baseUrl}/image/products/${objectKey}`;
   }
 };
 
